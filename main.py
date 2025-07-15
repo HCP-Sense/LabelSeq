@@ -7,24 +7,20 @@ from wx.lib.floatcanvas.FCObjects import Line
 
 
 app = wx.App() 
-window = wx.Frame(None, title = "LabelSeq", size = (600,600))
-panel = wx.Panel(window)
-label = wx.StaticText(panel, label = "Hello World", pos = (100,50)) 
-window.Show(True) 
-
-
-
-
+window = wx.Frame(None, title = "LabelSeq", size = (1000,600))
+#panel = wx.Panel(window)
+#label = wx.StaticText(panel, label = "Hello World", pos = (100,50))
 canvas = FloatCanvas.FloatCanvas(window, -1,
-                             size=(500, 500),
+                             size=(1000, 500),
                              ProjectionFun=None,
                              Debug=0,
                              BackgroundColor="White",
                              )
+window.Show(True)
 
 
 
-def draw_sequence(seq: np.ndarray, scale_x: float = 10, scale_y: float = 10):
+def draw_sequence(seq: np.ndarray, scale_x: float = 10, scale_y: float = 20):
 
     for step, value in enumerate(seq):
         # add a circle
@@ -37,7 +33,7 @@ def draw_sequence(seq: np.ndarray, scale_x: float = 10, scale_y: float = 10):
         canvas.AddObject(line)
 
 
-seq = np.random.rand(20)
+seq = np.random.rand(100)
 print(seq)
 
 draw_sequence(seq)
