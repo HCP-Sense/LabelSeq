@@ -24,16 +24,16 @@ canvas = FloatCanvas.FloatCanvas(window, -1,
 
 
 
-def draw_sequence(seq: np.ndarray):
+def draw_sequence(seq: np.ndarray, scale_x: float = 10, scale_y: float = 10):
 
     for step, value in enumerate(seq):
         # add a circle
-        cir = canvas.AddCircle((step*10, value*10), 5, LineWidth=0, FillColor="Blue")
+        cir = canvas.AddCircle((step*scale_x, value*scale_y), 5, LineWidth=0, FillColor="Blue")
         canvas.AddObject(cir)
 
     for step, (value_a, value_b) in enumerate(zip(seq[:-1], seq[1:])):
         print(f"{step} - {value_a} - {value_b}")
-        line = Line(np.array([[step*10,value_a*10],[(step+1)*10,value_b*10]]))
+        line = Line(np.array([[step*scale_x, value_a*scale_y], [(step+1)*scale_x, value_b*scale_y]]))
         canvas.AddObject(line)
 
 
