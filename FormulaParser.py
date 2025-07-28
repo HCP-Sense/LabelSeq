@@ -1,3 +1,4 @@
+import ast, operator
 # Safe eval (unchanged)
 def safe_eval(expr, names):
     try:

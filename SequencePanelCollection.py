@@ -1,4 +1,6 @@
 import wx
+from FormulaParser import safe_eval
+
 class SequencePanel(wx.Panel):
     def __init__(self, parent, seq, title, formula=None,
                  draggable=False, visible_count=None):

@@ -1,9 +1,9 @@
 import wx
 import numpy as np
-import ast, operator
+
 from wx.lib import floatcanvas  # ensure this import so WX knows about GC
 from SequencePanelCollection import SequencePanel
-from FormulaParser import safe_eval
+
 
 class MainFrame(wx.Frame):
     def __init__(self):
