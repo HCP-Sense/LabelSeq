@@ -3,38 +3,7 @@ import numpy as np
 import ast, operator
 from wx.lib import floatcanvas  # ensure this import so WX knows about GC
 from SequencePanelCollection import SequencePanel
-
-# Safe eval (unchanged)
-def safe_eval(expr, names):
-    try:
-        node = ast.parse(expr, mode='eval')
-    except Exception:
-        raise ValueError("Invalid formula syntax")
-    OPS = {
-        ast.Add: operator.add, ast.Sub: operator.sub,
-        ast.Mult: operator.mul, ast.Div: operator.truediv,
-        ast.Pow: operator.pow, ast.USub: operator.neg
-    }
-    def _visit(n):
-        if isinstance(n, ast.Expression):
-            return _visit(n.body)
-        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):
-            return n.value
-        if isinstance(n, ast.BinOp):
-            l = _visit(n.left)
-            r = _visit(n.right)
-            if type(n.op) in OPS:
-                return OPS[type(n.op)](l, r)
-        if isinstance(n, ast.UnaryOp):
-            v = _visit(n.operand)
-            if type(n.op) in OPS:
-                return OPS[type(n.op)](v)
-        if isinstance(n, ast.Name) and n.id in names:
-            return names[n.id]
-        raise ValueError(f"Unsupported expression: {expr}")
-    return _visit(node)
-
-
+from FormulaParser import safe_eval
 
 class MainFrame(wx.Frame):
     def __init__(self):
