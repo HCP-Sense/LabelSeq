@@ -23,3 +23,7 @@ LabelSeq is intended to generate ground-truth for machine learning applications.
      - Arbitrary Amount of Signal Components
      - Remaining Signal
    - Synchronous Pinching/Zooming
+
+## Installation
+
+## Usage
