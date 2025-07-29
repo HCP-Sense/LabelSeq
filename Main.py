@@ -5,6 +5,16 @@ from wx.lib import floatcanvas  # ensure this import so WX knows about GC
 from SequencePanelCollection import SequencePanel
 
 
+COLOR_CYCLE = [
+    wx.BLUE,
+    wx.RED,
+    wx.GREEN,
+    wx.Colour(255, 165, 0),    # Orange
+    wx.Colour(128, 0, 128),    # Purple
+    wx.Colour(0, 206, 209),    # Turquoise
+    wx.Colour(255, 105, 180),  # Hot pink
+]
+
 class MainFrame(wx.Frame):
     def __init__(self):
         super().__init__(None, title="LabelSeq (GC‑only)", size=(1000, 800))
@@ -15,7 +25,7 @@ class MainFrame(wx.Frame):
         btn.Bind(wx.EVT_BUTTON, self.on_add)
         vs = wx.BoxSizer(wx.VERTICAL)
         vs.Add(btn, 0, wx.ALL | wx.CENTER, 5)
-
+        self.color_index = 0
         self.sig_area = wx.ScrolledWindow(pnl, style=wx.VSCROLL)
         self.sig_area.SetScrollRate(0, 20)
         self.sig_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -39,9 +49,18 @@ class MainFrame(wx.Frame):
                        formula="orig-res", draggable=False)
         self.add_panel("Result", self.result, draggable=True)
 
+
+
     def add_panel(self, label, seq, formula=None, draggable=False):
+
+        # Pick a unique color from the cyclecolor = COLOR_CYCLE[self.color_index % len(COLOR_CYCLE)]
+        color = COLOR_CYCLE[self.color_index % len(COLOR_CYCLE)]
+        self.color_index += 1
+
+        # Pass the color to SequencePanel
         sp = SequencePanel(self.sig_area, seq, label, formula,
-                           draggable=draggable, visible_count=200)
+                           draggable=draggable, visible_count=200,
+                           color=color)
         sp.SetMinSize((-1, 250))
 
         if formula:
@@ -88,6 +107,19 @@ class MainFrame(wx.Frame):
                 ld.Destroy()
         else:
             dlg.Destroy()
+
+    def remove_panel(self, panel):
+        for i, entry in enumerate(self.signals):
+            if entry['panel'] is panel:
+                self.sig_sizer.Detach(panel)
+                panel.Destroy()
+                del self.signals[i]
+                break
+
+        # Refresh layout
+        self.sig_area.FitInside()
+        self.sig_area.Layout()
+
 
 if __name__ == '__main__':
     app = wx.App(False)
