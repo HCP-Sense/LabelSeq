@@ -67,17 +67,15 @@ class SequencePanel(wx.Panel):
 
         # Axes
         gc.SetPen(wx.Pen(wx.LIGHT_GREY))
-        # Y axis
-        gc.StrokeLine(self.padding, self.padding,
-                      self.padding, h - self.padding)
-        # X axis
-        gc.StrokeLine(self.padding, h - self.padding,
-                      w - self.padding, h - self.padding)
+        gc.StrokeLine(self.padding, self.padding, self.padding, h - self.padding)  # Y axis
+        gc.StrokeLine(self.padding, h - self.padding, w - self.padding, h - self.padding)  # X axis
 
         # Y ticks and labels
         mx, mn = max(self.seq), min(self.seq)
         rng = (mx - mn) or 1
-        mx += 0.1 * rng; mn -= 0.1 * rng; rng = mx - mn
+        mx += 0.1 * rng
+        mn -= 0.1 * rng
+        rng = mx - mn
         for k in range(6):
             val = mn + k * (rng / 5)
             y = h - self.padding - (val - mn) * ((h - 2 * self.padding) / rng)
@@ -107,16 +105,24 @@ class SequencePanel(wx.Panel):
         # Restore default font for plotting
         gc.SetFont(f_gc)
 
-        # Plot line
+        # ✅ Define and apply clip box before plotting
+        graph_x = self.padding
+        graph_y = self.padding
+        graph_w = w - 2 * self.padding
+        graph_h = h - 2 * self.padding
+        gc.Clip(graph_x, graph_y, graph_w, graph_h)
+
+        # Plot line (clipped)
         pts = [self.to_px(i, v, w, h) for i, v in enumerate(self.seq)]
         if pts:
             path = gc.CreatePath()
             path.MoveToPoint(*pts[0])
-            for p in pts[1:]: path.AddLineToPoint(*p)
+            for p in pts[1:]:
+                path.AddLineToPoint(*p)
             gc.SetPen(wx.Pen(wx.BLUE, 1))
             gc.StrokePath(path)
 
-        # Draggable handle
+        # Draggable handle (still inside the clip)
         if self.draggable and self.selected_idx is not None:
             x, y = pts[self.selected_idx]
             gc.SetBrush(wx.Brush(wx.BLUE))

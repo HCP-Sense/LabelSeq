@@ -49,21 +49,26 @@ class MainFrame(wx.Frame):
 
         if draggable:
             self.result_panel = sp
-            sp.sync_panels = [entry['panel'] for entry in self.signals if entry['formula']]
-            self.sig_sizer.Add(sp, 0, wx.EXPAND | wx.ALL, 5)
-        else:
-            if self.result_panel:
-                idx = next(
-                    i for i in range(self.sig_sizer.GetItemCount())
-                    if self.sig_sizer.GetItem(i).GetWindow() is self.result_panel
-                )
-                self.sig_sizer.Insert(idx, sp, 0, wx.EXPAND | wx.ALL, 5)
-                if formula:
-                    self.result_panel.sync_panels.append(sp)
-            else:
-                self.sig_sizer.Add(sp, 0, wx.EXPAND | wx.ALL, 5)
 
+        # Add panel to the layout (above Result if needed)
+        if self.result_panel and not draggable:
+            idx = next(
+                i for i in range(self.sig_sizer.GetItemCount())
+                if self.sig_sizer.GetItem(i).GetWindow() is self.result_panel
+            )
+            self.sig_sizer.Insert(idx, sp, 0, wx.EXPAND | wx.ALL, 5)
+        else:
+            self.sig_sizer.Add(sp, 0, wx.EXPAND | wx.ALL, 5)
+
+        # Register new panel
         self.signals.append({'panel': sp, 'formula': formula})
+
+        # 🔄 Sync all panels with each other
+        all_panels = [entry['panel'] for entry in self.signals]
+        for entry in self.signals:
+            panel = entry['panel']
+            panel.sync_panels = [p for p in all_panels if p != panel]
+
         self.sig_area.FitInside()
         self.sig_area.Layout()
         sp.Refresh()
