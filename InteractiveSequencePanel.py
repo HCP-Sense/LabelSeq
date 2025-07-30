@@ -1,3 +1,4 @@
+"""InteractiveSequencePanel.py: SequencePanel Subclass adding Mouse Events for Interaction"""
 
 # Project Imports
 from SequencePanel import SequencePanel
@@ -6,7 +7,10 @@ from FormulaParser import safe_eval
 # Third-Party Imports
 import wx
 
+
 class InteractiveSequencePanel(SequencePanel):
+    """SequencePanel Subclass adding Mouse Events for Interaction"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -56,6 +60,7 @@ class InteractiveSequencePanel(SequencePanel):
         main_sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
         self.Layout()
 
+
     def edit_title(self, evt):
         dlg = wx.TextEntryDialog(self, "Enter new title:", "Edit Title", self.title)
         if dlg.ShowModal() == wx.ID_OK:
@@ -64,6 +69,7 @@ class InteractiveSequencePanel(SequencePanel):
             self.Refresh()
         dlg.Destroy()
 
+
     def edit_formula(self, evt):
         dlg = wx.TextEntryDialog(self, "Enter new formula:", "Edit Formula", self.formula or "")
         if dlg.ShowModal() == wx.ID_OK:
@@ -71,10 +77,12 @@ class InteractiveSequencePanel(SequencePanel):
             self.Refresh()
         dlg.Destroy()
 
+
     def delete_self(self, evt):
         top = wx.GetTopLevelParent(self)
         if hasattr(top, 'remove_panel'):
             top.remove_panel(self)
+
 
     def on_mouse_motion(self, evt):
         # Middle button panning
@@ -102,6 +110,7 @@ class InteractiveSequencePanel(SequencePanel):
             # Hover move
             self._handle_hover(evt)
 
+
     def _handle_drag(self, evt):
         x, y = evt.GetPosition()
         w, h = self.GetClientSize()
@@ -127,6 +136,7 @@ class InteractiveSequencePanel(SequencePanel):
 
         self.Refresh()
 
+
     def _handle_hover(self, evt):
         x, _ = evt.GetPosition()
         w, _ = self.GetClientSize()
@@ -137,10 +147,12 @@ class InteractiveSequencePanel(SequencePanel):
         self.Refresh()
         evt.Skip()
 
+
     def on_mouse_leave(self, evt):
         self.hover_idx = None
         self.Refresh()
         evt.Skip()
+
 
     def on_double_click(self, evt):
         dlg = wx.TextEntryDialog(self, "Enter new title:", "Rename", self.title)
@@ -156,6 +168,7 @@ class InteractiveSequencePanel(SequencePanel):
                 self.formula = dlg2.GetValue()
                 self.Refresh()
             dlg2.Destroy()
+
 
     def on_left_down(self, evt):
         if not self.draggable:
@@ -175,18 +188,22 @@ class InteractiveSequencePanel(SequencePanel):
             self.dragging = True
             self.CaptureMouse()
 
+
     def on_left_up(self, evt):
         if self.dragging:
             self.dragging = False
             self.ReleaseMouse()
             self.Refresh()
 
+
     def on_middle_down(self, evt):
         self._pan_start = evt.GetX()
         self._pan_origin = self.pan_offset
 
+
     def on_middle_up(self, evt):
         self._pan_start = None
+
 
     def on_mouse_wheel(self, evt):
         if not self.draggable:
