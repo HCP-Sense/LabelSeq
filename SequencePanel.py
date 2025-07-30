@@ -1,5 +1,5 @@
 import wx
-from FormulaParser import safe_eval  # Your formula safe evaluation utility
+
 
 class SequencePanel(wx.Panel):
     def __init__(self, parent, sequence, label, formula=None,

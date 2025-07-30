@@ -1,6 +1,6 @@
 import wx
 import numpy as np
-from Sequence_Panel_Events import SequencePanelEvents  # Import the full interactive panel
+from InteractiveSequencePanel import SequencePanelEvents  # Import the full interactive panel
 
 COLOR_CYCLE = [
     wx.BLUE,
