@@ -1,9 +1,6 @@
 import wx
 import numpy as np
-
-from wx.lib import floatcanvas  # ensure this import so WX knows about GC
-from SequencePanelCollection import SequencePanel
-
+from Sequence_Panel_Events import SequencePanelEvents  # Import the full interactive panel
 
 COLOR_CYCLE = [
     wx.BLUE,
@@ -17,31 +14,51 @@ COLOR_CYCLE = [
 
 class MainFrame(wx.Frame):
     def __init__(self):
-        super().__init__(None, title="LabelSeq (GC‑only)", size=(1000, 800))
-        pnl = wx.Panel(self)
-        pnl.SetBackgroundColour(wx.WHITE)
-
-        btn = wx.Button(pnl, label="Add Component")
-        btn.Bind(wx.EVT_BUTTON, self.on_add)
-        vs = wx.BoxSizer(wx.VERTICAL)
-        vs.Add(btn, 0, wx.ALL | wx.CENTER, 5)
+        super().__init__(None, title="LabelSeq (GC‑only)", size=(1200, 800))
+        self.SetBackgroundColour(wx.WHITE)
         self.color_index = 0
-        self.sig_area = wx.ScrolledWindow(pnl, style=wx.VSCROLL)
+        self.signals = []
+        self.result_panel = None
+
+        # Top-Level Split
+        main_panel = wx.Panel(self)
+        top_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        # Legend Panel (Left Side)
+        self.legend_panel = wx.Panel(main_panel, size=(150, -1))
+        self.legend_panel.SetBackgroundColour(wx.Colour(245, 245, 245))
+        self.legend_sizer = wx.BoxSizer(wx.VERTICAL)
+        legend_label = wx.StaticText(self.legend_panel, label="Legend")
+        font = legend_label.GetFont()
+        font.MakeBold()
+        legend_label.SetFont(font)
+        self.legend_sizer.Add(legend_label, 0, wx.ALL, 8)
+        self.legend_panel.SetSizer(self.legend_sizer)
+
+        # Main Controls and Signal Panels (Right Side)
+        right_panel = wx.Panel(main_panel)
+        right_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        btn = wx.Button(right_panel, label="Add Component")
+        btn.Bind(wx.EVT_BUTTON, self.on_add)
+        right_sizer.Add(btn, 0, wx.ALL | wx.CENTER, 5)
+
+        self.sig_area = wx.ScrolledWindow(right_panel, style=wx.VSCROLL)
         self.sig_area.SetScrollRate(0, 20)
         self.sig_sizer = wx.BoxSizer(wx.VERTICAL)
         self.sig_area.SetSizer(self.sig_sizer)
-        vs.Add(self.sig_area, 1, wx.EXPAND | wx.ALL, 5)
+        right_sizer.Add(self.sig_area, 1, wx.EXPAND | wx.ALL, 5)
 
-        pnl.SetSizer(vs)
-        pnl.Layout()
-        self.Layout()
-        self.Show()
-        self.Centre()
+        right_panel.SetSizer(right_sizer)
+
+        # Combine Left (Legend) and Right (Panels)
+        top_sizer.Add(self.legend_panel, 0, wx.EXPAND | wx.ALL, 5)
+        top_sizer.Add(right_panel, 1, wx.EXPAND | wx.ALL, 5)
+
+        main_panel.SetSizer(top_sizer)
 
         self.original = np.random.rand(300)
         self.result = self.original.copy()
-        self.signals = []
-        self.result_panel = None
 
         # default panels
         self.add_panel("Original", self.original, draggable=False)
@@ -49,18 +66,18 @@ class MainFrame(wx.Frame):
                        formula="orig-res", draggable=False)
         self.add_panel("Result", self.result, draggable=True)
 
-
+        self.Centre()
+        self.Show()
 
     def add_panel(self, label, seq, formula=None, draggable=False):
-
-        # Pick a unique color from the cyclecolor = COLOR_CYCLE[self.color_index % len(COLOR_CYCLE)]
+        # Pick a color
         color = COLOR_CYCLE[self.color_index % len(COLOR_CYCLE)]
         self.color_index += 1
 
-        # Pass the color to SequencePanel
-        sp = SequencePanel(self.sig_area, seq, label, formula,
-                           draggable=draggable, visible_count=200,
-                           color=color)
+        # Create Sequence Panel (use SequencePanelEvents for full interactivity)
+        sp = SequencePanelEvents(self.sig_area, seq, label, formula,
+                                draggable=draggable, visible_count=200,
+                                color=color)
         sp.SetMinSize((-1, 250))
 
         if formula:
@@ -69,7 +86,7 @@ class MainFrame(wx.Frame):
         if draggable:
             self.result_panel = sp
 
-        # Add panel to the layout (above Result if needed)
+        # Add panel to layout (insert above result if needed)
         if self.result_panel and not draggable:
             idx = next(
                 i for i in range(self.sig_sizer.GetItemCount())
@@ -79,18 +96,35 @@ class MainFrame(wx.Frame):
         else:
             self.sig_sizer.Add(sp, 0, wx.EXPAND | wx.ALL, 5)
 
-        # Register new panel
         self.signals.append({'panel': sp, 'formula': formula})
 
-        # 🔄 Sync all panels with each other
+        # Sync Panels
         all_panels = [entry['panel'] for entry in self.signals]
         for entry in self.signals:
             panel = entry['panel']
             panel.sync_panels = [p for p in all_panels if p != panel]
 
+        # Add to legend
+        self.add_legend_entry(label, color)
+
         self.sig_area.FitInside()
         self.sig_area.Layout()
         sp.Refresh()
+
+    def add_legend_entry(self, label, color):
+        panel = wx.Panel(self.legend_panel)
+        sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        color_box = wx.Panel(panel, size=(16, 16))
+        color_box.SetBackgroundColour(color)
+
+        name = wx.StaticText(panel, label=label)
+        sizer.Add(color_box, 0, wx.RIGHT | wx.ALIGN_CENTER_VERTICAL, 5)
+        sizer.Add(name, 0, wx.ALIGN_CENTER_VERTICAL)
+
+        panel.SetSizer(sizer)
+        self.legend_sizer.Add(panel, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
+        self.legend_panel.Layout()
 
     def on_add(self, evt):
         dlg = wx.TextEntryDialog(self, "Formula (orig,res):", "New", "")
@@ -116,7 +150,6 @@ class MainFrame(wx.Frame):
                 del self.signals[i]
                 break
 
-        # Refresh layout
         self.sig_area.FitInside()
         self.sig_area.Layout()
 
