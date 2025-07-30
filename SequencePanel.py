@@ -2,8 +2,8 @@ import wx
 
 
 class SequencePanel(wx.Panel):
-    def __init__(self, parent, sequence, title, formula=None,
-                 draggable=False, visible_count=None, color=wx.BLUE):
+    def __init__(self, parent, sequence, title: str, formula=None,
+                 draggable: bool = False, visible_count=None, color=wx.BLUE):
         super().__init__(parent, style=wx.NO_FULL_REPAINT_ON_RESIZE)
 
         # Core data
