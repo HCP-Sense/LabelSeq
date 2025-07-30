@@ -2,7 +2,8 @@ import wx
 from SequencePanel import SequencePanel
 from FormulaParser import safe_eval  # Your formula safe evaluation utility
 
-class SequencePanelEvents(SequencePanel):
+
+class InteractiveSequencePanel(SequencePanel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

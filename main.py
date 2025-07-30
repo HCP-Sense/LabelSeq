@@ -1,6 +1,6 @@
 import wx
 import numpy as np
-from InteractiveSequencePanel import SequencePanelEvents  # Import the full interactive panel
+from InteractiveSequencePanel import InteractiveSequencePanel  # Import the full interactive panel
 
 COLOR_CYCLE = [
     wx.BLUE,
@@ -75,9 +75,9 @@ class MainFrame(wx.Frame):
         self.color_index += 1
 
         # Create Sequence Panel (use SequencePanelEvents for full interactivity)
-        sp = SequencePanelEvents(self.sig_area, seq, label, formula,
-                                draggable=draggable, visible_count=200,
-                                color=color)
+        sp = InteractiveSequencePanel(self.sig_area, seq, label, formula,
+                                      draggable=draggable, visible_count=200,
+                                      color=color)
         sp.SetMinSize((-1, 250))
 
         if formula:
