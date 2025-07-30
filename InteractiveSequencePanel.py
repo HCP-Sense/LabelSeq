@@ -1,5 +1,5 @@
 import wx
-from Sequence_Panel_Core import SequencePanel
+from SequencePanel import SequencePanel
 from FormulaParser import safe_eval  # Your formula safe evaluation utility
 
 class SequencePanelEvents(SequencePanel):
