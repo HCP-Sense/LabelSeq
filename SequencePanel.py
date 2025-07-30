@@ -2,14 +2,14 @@ import wx
 
 
 class SequencePanel(wx.Panel):
-    def __init__(self, parent, sequence, label, formula=None,
+    def __init__(self, parent, sequence, title, formula=None,
                  draggable=False, visible_count=None, color=wx.BLUE):
         super().__init__(parent, style=wx.NO_FULL_REPAINT_ON_RESIZE)
 
         # Core data
         self.seq = list(sequence)  # The modifiable sequence
         self.original_seq = list(sequence)  # The unmodified original sequence
-        self.title = label
+        self.title = title
         self.formula = formula
         self.color = color
         self.draggable = draggable
