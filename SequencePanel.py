@@ -1,3 +1,9 @@
+__author___ = "Moye Nyuysoni Glein Perry"
+__email__ = "moyegp@gmail.com""
+__maintainer__ = "Rob Knight"
+__status__ = "Moye Nyuysoni Glein Perry"
+
+# Third-Party Imports
 import wx
 
 

@@ -1,6 +1,14 @@
+__author___ = "Moye Nyuysoni Glein Perry"
+__email__ = "moyegp@gmail.com""
+__maintainer__ = "Rob Knight"
+__status__ = "Moye Nyuysoni Glein Perry"
+# Project Imports
+from InteractiveSequencePanel import InteractiveSequencePanel
+
+# Third-Party Imports
 import wx
 import numpy as np
-from InteractiveSequencePanel import InteractiveSequencePanel  # Import the full interactive panel
+
 
 COLOR_CYCLE = [
     wx.BLUE,
