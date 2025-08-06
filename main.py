@@ -1,6 +1,6 @@
 __author___ = "Moye Nyuysoni Glein Perry"
 __email__ = "moyegp@gmail.com""
-__maintainer__ = "Rob Knight"
+__maintainer__ = "Moye Nyuysoni Glein Perry"
 __status__ = "Moye Nyuysoni Glein Perry"
 # Project Imports
 from InteractiveSequencePanel import InteractiveSequencePanel
