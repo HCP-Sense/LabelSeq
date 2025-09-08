@@ -11,6 +11,17 @@ from InteractiveSequencePanel import InteractiveSequencePanel
 # Third-Party Imports
 import wx
 import numpy as np
+import librosa
+
+
+
+file_name="HeartB/Aunlabelledtest__201108011117.wav"
+file_content,sr = librosa.load(file_name, sr=None)
+file_content=file_content[0:10000]
+file_content=file_content*100
+print(len(file_content))
+print(min(file_content))
+print(max(file_content))
 
 
 COLOR_CYCLE = [
@@ -68,7 +79,7 @@ class MainFrame(wx.Frame):
 
         main_panel.SetSizer(top_sizer)
 
-        self.original = np.random.rand(300)
+        self.original = file_content
         self.result = self.original.copy()
 
         # default panels
