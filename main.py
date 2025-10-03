@@ -12,17 +12,8 @@ from LoadFile import  load_file
 # Third-Party Imports
 import wx
 import numpy as np
-import librosa
 
 
-
-file_name="HeartB/Aunlabelledtest__201108011117.wav"
-file_content,sr = librosa.load(file_name, sr=None)
-file_content=file_content[0:10000]
-file_content=file_content*100
-print(len(file_content))
-print(min(file_content))
-print(max(file_content))
 
 
 COLOR_CYCLE = [
@@ -41,7 +32,13 @@ class MainFrame(wx.Frame):
         self.SetBackgroundColour(wx.WHITE)
         self.color_index = 0
         self.signals = []
+        self.original =[]
         self.result_panel = None
+        self.content = []
+        self.panels = []
+
+
+
 
         # Top-Level Split
         main_panel = wx.Panel(self)
@@ -91,14 +88,27 @@ class MainFrame(wx.Frame):
 
         main_panel.SetSizer(top_sizer)
 
-        self.original = file_content
-        self.result = self.original.copy()
+
+        if self.original is not None:
+            # always convert to numpy so subtraction works
+            self.original = np.array(self.original)
+            self.result = self.original.copy()
+        else:
+            self.result = None
+
 
         # default panels
         self.add_panel("Original", self.original, draggable=False)
-        self.add_panel("Signal 1", self.original - self.result,
-                       formula="orig-res", draggable=False)
-        self.add_panel("Result", self.result, draggable=True)
+
+        if self.original is not None and self.result is not None:
+            # subtraction is safe because both are numpy arrays
+            diff = self.original - self.result
+            self.add_panel("Signal 1", diff, formula="orig-res", draggable=False)
+            self.add_panel("Result", self.result, draggable=True)
+        else:
+            # create empty placeholders if nothing is loaded
+            self.add_panel("Signal 1", draggable=False)
+            self.add_panel("Result", self.result, draggable=True)
 
         self.Centre()
         self.Show()
@@ -188,40 +198,89 @@ class MainFrame(wx.Frame):
         self.sig_area.Layout()
 
     def on_load_file(self, event):
-        """Load file via your LoadFile.load_file() and rebuild panels."""
-        loaded = load_file()
-        if loaded is None:
+        """Load file via your load_file() and rebuild panels safely."""
+
+        # Load content
+        self.content = load_file()
+
+        if self.content is None:
             wx.MessageBox("No file selected or failed to load.",
                           "Info", wx.OK | wx.ICON_INFORMATION)
             return
 
-        arr = None
+        # Convert to safe NumPy array
         try:
-            if isinstance(loaded, np.ndarray):
-                # Keep as is, just ensure float dtype
-                arr = np.asarray(loaded, dtype=float)
+            if isinstance(self.content, np.ndarray):
+                arr = np.asarray(self.content, dtype=float)
 
-            elif isinstance(loaded, pd.DataFrame):
-                # Convert to numpy 2D array
-                arr = loaded.to_numpy(dtype=float)
+            elif isinstance(self.content, pd.DataFrame):
+                arr = self.content.to_numpy(dtype=float)
+
+            elif isinstance(self.content, pd.Series):
+                arr = self.content.to_numpy(dtype=float)[:, np.newaxis]
 
             else:
-                # Try coercing to array directly
-                arr = np.array(loaded, dtype=float)
-
-                # Ensure at least 2D (so it's never 1D)
+                arr = np.array(self.content, dtype=float)
+                # ensure at least 2D
                 if arr.ndim == 1:
                     arr = arr[:, np.newaxis]
 
         except Exception:
             arr = np.empty((0, 0), dtype=float)
 
-        # Guarantee arr is a numpy array, not 1D
+        # Fallback if empty
         if arr is None or arr.size == 0:
             arr = np.empty((0, 0), dtype=float)
 
-        # now arr is guaranteed to be 2D+ numpy array
-        return arr
+        # ✅ Immediately update original and result
+        self.original = arr
+        self.result = self.original.copy()
+
+        # Optional: update content for panels
+        self.content = self.original
+
+        # Now rebuild panels safely
+        self.update_panels()
+
+    def update_panels(self):
+        """
+        Safely rebuild the main panels based on current self.original and self.result.
+        Old panels are destroyed and removed from sizer to prevent duplication.
+        """
+        # Remove and destroy all existing panels in the sig_sizer
+        for entry in self.signals[:]:
+            panel = entry['panel']
+            self.sig_sizer.Detach(panel)  # remove from sizer
+            panel.Destroy()  # destroy the panel
+            self.signals.remove(entry)  # remove from list
+
+        # Reset color index so colors start fresh
+        self.color_index = 0
+        self.result_panel = None
+
+        # Original panel
+        if self.original is not None and self.original.size > 0:
+            self.add_panel("Original", self.original, draggable=False)
+        else:
+            self.add_panel("Original", draggable=False)
+
+        # Signal 1 panel = difference between original and result
+        if (self.original is not None and self.result is not None
+                and self.original.size > 0 and self.result.size > 0):
+            diff = self.original - self.result
+            self.add_panel("Signal 1", diff, formula="orig-res", draggable=False)
+        else:
+            self.add_panel("Signal 1", draggable=False)
+
+        # Result panel
+        if self.result is not None and self.result.size > 0:
+            self.add_panel("Result", self.result, draggable=True)
+        else:
+            self.add_panel("Result", draggable=True)
+
+        # Refresh layout
+        self.sig_area.FitInside()
+        self.sig_area.Layout()
 
 
 if __name__ == '__main__':
