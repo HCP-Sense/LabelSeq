@@ -7,6 +7,7 @@ __status__ = "Moye Nyuysoni Glein Perry"
 
 # Project Imports
 from InteractiveSequencePanel import InteractiveSequencePanel
+from LoadFile import  load_file
 
 # Third-Party Imports
 import wx
@@ -60,10 +61,21 @@ class MainFrame(wx.Frame):
         # Main Controls and Signal Panels (Right Side)
         right_panel = wx.Panel(main_panel)
         right_sizer = wx.BoxSizer(wx.VERTICAL)
+        btn_row = wx.BoxSizer(wx.HORIZONTAL)
 
-        btn = wx.Button(right_panel, label="Add Component")
-        btn.Bind(wx.EVT_BUTTON, self.on_add)
-        right_sizer.Add(btn, 0, wx.ALL | wx.CENTER, 5)
+        # First button
+        btn_add = wx.Button(right_panel, label="Add Component")
+        btn_add.Bind(wx.EVT_BUTTON, self.on_add)
+        btn_add.SetBackgroundColour(wx.Colour(100, 200, 255))  # light blue
+        btn_add.SetForegroundColour(wx.Colour(0, 0, 0))  # black text
+        right_sizer.Add(btn_add, 0,wx.ALL| wx.CENTER, 5)
+
+        # Second button
+        btn_import = wx.Button(right_panel, label="Import Data")
+        btn_import.Bind(wx.EVT_BUTTON, self.on_load_file)
+        btn_import.SetBackgroundColour(wx.Colour(200, 255, 200))  # light green
+        btn_import.SetForegroundColour(wx.Colour(0, 0, 0))  # black text
+        btn_row.Add(btn_import, 0, wx.ALL, 5)
 
         self.sig_area = wx.ScrolledWindow(right_panel, style=wx.VSCROLL)
         self.sig_area.SetScrollRate(0, 20)
@@ -174,6 +186,42 @@ class MainFrame(wx.Frame):
 
         self.sig_area.FitInside()
         self.sig_area.Layout()
+
+    def on_load_file(self, event):
+        """Load file via your LoadFile.load_file() and rebuild panels."""
+        loaded = load_file()
+        if loaded is None:
+            wx.MessageBox("No file selected or failed to load.",
+                          "Info", wx.OK | wx.ICON_INFORMATION)
+            return
+
+        arr = None
+        try:
+            if isinstance(loaded, np.ndarray):
+                # Keep as is, just ensure float dtype
+                arr = np.asarray(loaded, dtype=float)
+
+            elif isinstance(loaded, pd.DataFrame):
+                # Convert to numpy 2D array
+                arr = loaded.to_numpy(dtype=float)
+
+            else:
+                # Try coercing to array directly
+                arr = np.array(loaded, dtype=float)
+
+                # Ensure at least 2D (so it's never 1D)
+                if arr.ndim == 1:
+                    arr = arr[:, np.newaxis]
+
+        except Exception:
+            arr = np.empty((0, 0), dtype=float)
+
+        # Guarantee arr is a numpy array, not 1D
+        if arr is None or arr.size == 0:
+            arr = np.empty((0, 0), dtype=float)
+
+        # now arr is guaranteed to be 2D+ numpy array
+        return arr
 
 
 if __name__ == '__main__':
