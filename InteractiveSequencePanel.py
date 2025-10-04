@@ -21,6 +21,7 @@ class InteractiveSequencePanel(SequencePanel):
         # Setup UI controls (title, buttons)
         self._setup_ui()
 
+
         # Bind interactive events
         self.Bind(wx.EVT_LEAVE_WINDOW, self.on_mouse_leave)
         self.Bind(wx.EVT_LEFT_DCLICK, self.on_double_click)
@@ -43,18 +44,23 @@ class InteractiveSequencePanel(SequencePanel):
         self.title_label.SetFont(title_font)
         btn_sizer.Add(self.title_label, 1, wx.ALIGN_CENTER_VERTICAL)
 
-        btn_title = wx.Button(self, label="Edit Title", size=(90, -1))
-        btn_title.Bind(wx.EVT_BUTTON, self.edit_title)
-        btn_sizer.Add(btn_title, 0, wx.LEFT, 5)
+        # If this panel is NOT the Original, allow Edit Title
+        if not str(self.title).strip().lower() == "original":
+            btn_title = wx.Button(self, label="Edit Title", size=(90, -1))
+            btn_title.Bind(wx.EVT_BUTTON, self.edit_title)
+            btn_sizer.Add(btn_title, 0, wx.LEFT, 5)
 
+        # Formula button if formula present
         if self.formula:
             btn_formula = wx.Button(self, label="Edit Formula", size=(100, -1))
             btn_formula.Bind(wx.EVT_BUTTON, self.edit_formula)
             btn_sizer.Add(btn_formula, 0, wx.LEFT, 5)
 
-        btn_delete = wx.Button(self, label="Delete", size=(70, -1))
-        btn_delete.Bind(wx.EVT_BUTTON, self.delete_self)
-        btn_sizer.Add(btn_delete, 0, wx.LEFT, 5)
+        # Only allow Delete for panels that are NOT Original and NOT Result
+        if str(self.title).strip().lower() not in ("original", "result"):
+            btn_delete = wx.Button(self, label="Delete", size=(70, -1))
+            btn_delete.Bind(wx.EVT_BUTTON, self.delete_self)
+            btn_sizer.Add(btn_delete, 0, wx.LEFT, 5)
 
         main_sizer = self.GetSizer()
         if main_sizer is None:
@@ -63,7 +69,6 @@ class InteractiveSequencePanel(SequencePanel):
         main_sizer.Clear()
         main_sizer.Add(btn_sizer, 0, wx.EXPAND | wx.ALL, 5)
         self.Layout()
-
 
     def edit_title(self, evt):
         dlg = wx.TextEntryDialog(self, "Enter new title:", "Edit Title", self.title)
