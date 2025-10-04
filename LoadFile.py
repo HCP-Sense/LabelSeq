@@ -1,3 +1,10 @@
+"""loadfile.py: Opens file dialog, loads CSV/Excel/JSON/Audio into usable sequence data."""
+
+__author___ = "Moye Nyuysoni Glein Perry"
+__email__ = "moyegp@gmail.com"
+__maintainer__ = "Moye Nyuysoni Glein Perry"
+__status__ = "Moye Nyuysoni Glein Perry"
+
 import tkinter as tk
 from tkinter import filedialog
 from pathlib import Path

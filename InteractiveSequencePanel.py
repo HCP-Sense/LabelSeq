@@ -1,4 +1,5 @@
-"""InteractiveSequencePanel.py: SequencePanel Subclass adding Mouse Events for Interaction"""
+"""InteractiveSequencePanel.py: SequencePanel subclass adding mouse interactions (drag points, zoom, pan, hover sync)."""
+
 __author___ = "Moye Nyuysoni Glein Perry"
 __email__ = "moyegp@gmail.com"
 __maintainer__ = "Moye Nyuysoni Glein Perry"
@@ -9,7 +10,7 @@ from FormulaParser import safe_eval
 
 # Third-Party Imports
 import wx
- 
+
 
 class InteractiveSequencePanel(SequencePanel):
     """SequencePanel Subclass adding Mouse Events for Interaction"""

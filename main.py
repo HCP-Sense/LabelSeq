@@ -1,4 +1,4 @@
-"""main.py: Entry and main window class"""
+"""main.py: Entry point; builds main window, manages multiple panels, links legends and updates."""
 
 __author___ = "Moye Nyuysoni Glein Perry"
 __email__ = "moyegp@gmail.com"

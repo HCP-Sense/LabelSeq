@@ -1,3 +1,5 @@
+""" FormulaParser.py: Safely evaluates user formulas on sequences with arithmetic operators and variable substitution."""
+
 __author___ = "Moye Nyuysoni Glein Perry"
 __email__ = "moyegp@gmail.com"
 __maintainer__ = "Moye Nyuysoni Glein Perry"

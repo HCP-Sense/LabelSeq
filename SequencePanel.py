@@ -1,3 +1,5 @@
+""" SequencePanel.py: Core drawing panel; plots sequence with axes, overlay, zoom/pan, hover/drag indicators."""
+
 __author___ = "Moye Nyuysoni Glein Perry"
 __email__ = "moyegp@gmail.com"
 __maintainer__ = "Moye Nyuysoni Glein Perry"
