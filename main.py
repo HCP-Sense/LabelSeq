@@ -13,12 +13,15 @@ from LoadFile import load_file, set_selected_columns
 from model import Model
 from save_manager import save_array_csv, save_array_parquet, save_array_npy
 from project_manager import save_project, load_project
+from dialogs import interpret_non_numeric_series
+from active_learning import ActiveLearner
 
 # Third-Party Imports
 import wx
 import numpy as np
 import pandas as pd
 import typing
+
 
 # Color cycle for panels
 COLOR_CYCLE = [
@@ -30,6 +33,7 @@ COLOR_CYCLE = [
     wx.Colour(0, 206, 209),    # Turquoise
     wx.Colour(255, 105, 180),  # Hot pink
 ]
+
 
 class MainFrame(wx.Frame):
     DEFAULT_PANEL_LENGTH = 100
@@ -58,10 +62,20 @@ class MainFrame(wx.Frame):
         self.annotator_panel = None
         self.result_panel = None
 
-        # ----- Model Initialized BEFORE Panels -----
+        # ----- Model BEFORE Panels -----
         self.model = Model()
+        self.learner = ActiveLearner()      # active learning engine (sklearn under the hood)
+        self.auto_label_enabled = True      # toggle if you want
         self.model.set_original(self.original)
         self.model.set_annotator(self.annotator_seq)
+
+        # UI controls we reference later
+        self.btn_prev = None
+        self.btn_next = None
+
+        # Active learning controls
+        self.mode_choice = None
+        self.conf_ctrl = None
 
         # ----- Build UI -----
         self._build_ui()
@@ -105,11 +119,11 @@ class MainFrame(wx.Frame):
         btn_load_proj = wx.Button(right_panel, label="Load Project")
         btn_export_ann = wx.Button(right_panel, label="Export Annotation")
         btn_export_res = wx.Button(right_panel, label="Export Result")
-        btn_import = wx.Button(right_panel, label="Import Data")
-        btn_prev = wx.Button(right_panel, label="<< Previous Chunk")
-        btn_next = wx.Button(right_panel, label="Next Chunk >>")
-        btn_delete = wx.Button(right_panel, label="Delete File")
-        btn_add_anno = wx.Button(right_panel, label="Add Annotation")
+        self.btn_import = wx.Button(right_panel, label="Import Data")
+        self.btn_prev = wx.Button(right_panel, label="<< Previous Chunk")
+        self.btn_next = wx.Button(right_panel, label="Next Chunk >>")
+        self.btn_delete_file = wx.Button(right_panel, label="Delete File")
+        self.btn_add_annotation = wx.Button(right_panel, label="Add Annotation")
 
         btn_undo.Bind(wx.EVT_BUTTON, self.on_undo)
         btn_redo.Bind(wx.EVT_BUTTON, self.on_redo)
@@ -117,18 +131,33 @@ class MainFrame(wx.Frame):
         btn_load_proj.Bind(wx.EVT_BUTTON, self.on_load_project)
         btn_export_ann.Bind(wx.EVT_BUTTON, self.on_export_annotation)
         btn_export_res.Bind(wx.EVT_BUTTON, self.on_export_result)
-        btn_import.Bind(wx.EVT_BUTTON, self.on_load_file)
-        btn_prev.Bind(wx.EVT_BUTTON, self.on_prev_chunk)
-        btn_next.Bind(wx.EVT_BUTTON, self.on_next_chunk)
-        btn_delete.Bind(wx.EVT_BUTTON, self.on_delete_file)
-        btn_add_anno.Bind(wx.EVT_BUTTON, self.on_add_annotation)
+        self.btn_import.Bind(wx.EVT_BUTTON, self.on_load_file)
+        self.btn_prev.Bind(wx.EVT_BUTTON, self.on_prev_chunk)
+        self.btn_next.Bind(wx.EVT_BUTTON, self.on_next_chunk)
+        self.btn_delete_file.Bind(wx.EVT_BUTTON, self.on_delete_file)
+        self.btn_add_annotation.Bind(wx.EVT_BUTTON, self.on_add_annotation)
 
-        btn_prev.Disable()
-        btn_next.Disable()
+        self.btn_prev.Disable()
+        self.btn_next.Disable()
 
-        for btn in [btn_undo, btn_redo, btn_save_proj, btn_load_proj, btn_export_ann,
-                    btn_export_res, btn_import, btn_prev, btn_next, btn_delete, btn_add_anno]:
-            btn_row.Add(btn, 0, wx.ALL, 4)
+        # Active learning mode + confidence
+        mode_lbl = wx.StaticText(right_panel, label="AL Mode:")
+        self.mode_choice = wx.Choice(right_panel, choices=["Point-based", "Span-based", "Hybrid"])
+        self.mode_choice.SetSelection(2)  # Hybrid
+        self.mode_choice.Bind(wx.EVT_CHOICE, self.on_mode_changed)
+
+        conf_lbl = wx.StaticText(right_panel, label="Conf:")
+        self.conf_ctrl = wx.SpinCtrlDouble(right_panel, min=0.5, max=0.99, inc=0.01, initial=0.85)
+        self.conf_ctrl.Bind(wx.EVT_SPINCTRLDOUBLE, self.on_conf_changed)
+
+        controls = [
+            btn_undo, btn_redo, btn_save_proj, btn_load_proj,
+            btn_export_ann, btn_export_res, self.btn_import,
+            self.btn_prev, self.btn_next, self.btn_delete_file, self.btn_add_annotation,
+            mode_lbl, self.mode_choice, conf_lbl, self.conf_ctrl
+        ]
+        for c in controls:
+            btn_row.Add(c, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 4)
 
         right_sizer.Add(btn_row, 0, wx.ALIGN_CENTER_HORIZONTAL)
 
@@ -175,11 +204,18 @@ class MainFrame(wx.Frame):
             return np.zeros(self.DEFAULT_PANEL_LENGTH, dtype=float)
         if isinstance(seq, pd.DataFrame):
             if seq.shape[1] > 0:
-                arr = seq.iloc[:, 0].dropna().to_numpy(dtype=float)
+                # try numeric; if fails, interpret via dialog
+                try:
+                    arr = pd.to_numeric(seq.iloc[:, 0], errors='raise').dropna().to_numpy(dtype=float)
+                except Exception:
+                    arr = interpret_non_numeric_series(self, seq.iloc[:, 0])
             else:
                 arr = np.zeros(self.DEFAULT_PANEL_LENGTH, dtype=float)
         elif isinstance(seq, pd.Series):
-            arr = seq.dropna().to_numpy(dtype=float)
+            try:
+                arr = pd.to_numeric(seq, errors='raise').dropna().to_numpy(dtype=float)
+            except Exception:
+                arr = interpret_non_numeric_series(self, seq)
         else:
             arr = np.asarray(seq, dtype=float)
         arr = arr.flatten()
@@ -274,15 +310,20 @@ class MainFrame(wx.Frame):
     def _refresh_legend(self):
         self._clear_legend_entries()
         seen = set()
-        # Original/visible panels first
+
+        # Top section: only non-annotation panels
         for entry in self.signals:
             p = entry['panel']
+            role = getattr(p, 'role', '')
+            if role == 'annotation':
+                continue  # skip here; handled in "Annotations" section below
             title = getattr(p, 'title', getattr(p, 'label', ''))
             color = getattr(p, 'color', wx.BLACK)
             if title not in seen:
                 self._add_legend_row(title, color)
                 seen.add(title)
-        # Annotation-specific legend from model → ask ResultPanel for mapping
+
+        # "Annotations" block
         if self.result_panel and hasattr(self.result_panel, "get_annotation_legend"):
             ann_map = self.result_panel.get_annotation_legend()
             if ann_map:
@@ -291,9 +332,12 @@ class MainFrame(wx.Frame):
                 f.MakeBold()
                 heading.SetFont(f)
                 self.legend_sizer.Add(heading, 0, wx.LEFT | wx.TOP, 8)
+
+                # Show annotations in insertion order
                 for name, col in ann_map.items():
                     c = col if isinstance(col, wx.Colour) else wx.Colour(col)
                     self._add_legend_row(name, c)
+
         self.legend_panel.Layout()
 
     # =========================================================
@@ -359,10 +403,12 @@ class MainFrame(wx.Frame):
                 tmp[:min(len(new_annot), len(tmp))] = new_annot[:len(tmp)]
                 new_annot = tmp
 
+            # Update arrays
             self.annotator_seq = new_annot
             self.annotation_seq = self.original - self.annotator_seq
             self.result = self.original + self.annotation_seq
 
+            # Push to panels
             self.annotation_panel.seq = self.annotation_seq
             self.annotation_panel.n = len(self.annotation_seq)
             self.annotation_panel.Refresh()
@@ -374,6 +420,20 @@ class MainFrame(wx.Frame):
             except Exception:
                 self.result_panel.annotator_ref = self.annotator_panel
             self.result_panel.Refresh()
+
+            # Active learning auto-label (optional)
+            if self.auto_label_enabled:
+                mode = self.mode_choice.GetStringSelection()
+                conf = float(self.conf_ctrl.GetValue())
+                try:
+                    self.learner.on_user_edit(self.original, self.annotator_seq, label_name=self.annotation_panel.title)
+                    suggested = self.learner.suggest_labels(self.original, mode=mode, confidence=conf)
+                    # If result/annotation panels have APIs to display suggestions, call them here.
+                    # For now, we just update model annotations map if returned.
+                    if suggested is not None and hasattr(self.model, "merge_suggestions"):
+                        self.model.merge_suggestions(suggested)
+                except Exception:
+                    pass
 
             self._refresh_legend()
 
@@ -407,16 +467,6 @@ class MainFrame(wx.Frame):
         self.sig_area.FitInside()
         self.sig_area.Layout()
         self._update_chunk_buttons()
-
-        # Ensure prev/next button handles exist (in case UI changed)
-        # This safely binds them to attributes if not set earlier.
-        try:
-            if not hasattr(self, "btn_prev") or not hasattr(self, "btn_next"):
-                # Try to find by label
-                for child in self.FindWindowById(self.GetId()).GetChildren():
-                    pass  # placeholder (avoid errors)
-        except Exception:
-            pass
 
     # =========================================================
     # File & chunk handling
@@ -499,13 +549,16 @@ class MainFrame(wx.Frame):
         if not self.available_columns:
             self.column_choice.Clear()
             self.chunk_info_label.SetLabel("")
+            self.selected_column_index = None
             return
+
         self.column_choice.Clear()
         self.column_choice.SetItems(self.available_columns)
         if self.selected_column_index is None:
             self.selected_column_index = 0
         if 0 <= self.selected_column_index < len(self.available_columns):
             self.column_choice.SetSelection(self.selected_column_index)
+
         if self.total_chunks and self.total_chunks > 1:
             self.chunk_info_label.SetLabel(f"Chunk {self.current_chunk+1}/{self.total_chunks}")
             self.SetStatusText(f"Viewing chunk {self.current_chunk+1} of {self.total_chunks}")
@@ -536,11 +589,11 @@ class MainFrame(wx.Frame):
         if c is None:
             self.original = np.zeros(self.DEFAULT_PANEL_LENGTH)
         elif isinstance(c, (np.ndarray, pd.Series)):
-            self.original = np.asarray(c, dtype=float).flatten()
+            self.original = self._normalize_seq(c)
         elif isinstance(c, pd.DataFrame):
             idx = self.selected_column_index or 0
             idx = min(idx, c.shape[1]-1)
-            self.original = c.iloc[:, idx].dropna().to_numpy(dtype=float).flatten()
+            self.original = self._normalize_seq(c.iloc[:, idx])
         else:
             try:
                 self.original = np.asarray(c, dtype=float).flatten()
@@ -559,17 +612,14 @@ class MainFrame(wx.Frame):
         self.update_panels()
 
     def _update_chunk_buttons(self):
-        # If we don't have direct refs, just skip enabling/disabling
-        btn_prev = getattr(self, "btn_prev", None)
-        btn_next = getattr(self, "btn_next", None)
-        if not btn_prev or not btn_next:
+        if not self.btn_prev or not self.btn_next:
             return
         if self.total_chunks and self.total_chunks > 1:
-            btn_prev.Enable(self.current_chunk > 0)
-            btn_next.Enable(self.current_chunk < (self.total_chunks - 1))
+            self.btn_prev.Enable(self.current_chunk > 0)
+            self.btn_next.Enable(self.current_chunk < (self.total_chunks - 1))
         else:
-            btn_prev.Disable()
-            btn_next.Disable()
+            self.btn_prev.Disable()
+            self.btn_next.Disable()
 
     # =========================================================
     # Add Annotation Panel
@@ -585,9 +635,18 @@ class MainFrame(wx.Frame):
         seq = np.zeros_like(self.original)
         color = COLOR_CYCLE[self.color_index % len(COLOR_CYCLE)]
         self.color_index += 1
-        sp = AnnotationPanel(self.sig_area, seq, label, draggable=True, visible_count=200, color=color, role="annotation")
+        sp = AnnotationPanel(
+            self.sig_area, seq, label, draggable=True, visible_count=200, color=color, role="annotation"
+        )
         sp.original_seq = self.original
         self._add_panel_object(sp, insert_before_result=True)
+
+        # register color in model so it shows under "Annotations"
+        if hasattr(self.model, 'set_annotation_color'):
+            self.model.set_annotation_color(label, (color.Red(), color.Green(), color.Blue()))
+        if hasattr(self.result_panel, 'set_annotation_legend'):
+            self.result_panel.set_annotation_legend(self.model.annotation_colors)
+        self._refresh_legend()
 
         def live_update_callback(new_seq):
             sp.seq = new_seq
@@ -606,11 +665,16 @@ class MainFrame(wx.Frame):
     # Export Handlers
     # =========================================================
     def on_export_annotation(self, evt):
-        with wx.FileDialog(self, "Save annotation", wildcard="CSV (*.csv)|*.csv|Parquet (*.parquet)|*.parquet|NumPy (*.npy)|*.npy",
+        with wx.FileDialog(self, "Save annotation",
+                           wildcard="CSV (*.csv)|*.csv|Parquet (*.parquet)|*.parquet|NumPy (*.npy)|*.npy",
                            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dlg:
             if dlg.ShowModal() != wx.ID_OK:
                 return
             path = dlg.GetPath()
+            # ensure model has latest annotation (orig - annotator)
+            self.model.set_original(self.original)
+            self.model.set_annotator(self.annotator_seq)
+            self.model.recompute()
             if path.endswith(".csv"):
                 save_array_csv(path, self.model.annotation)
             elif path.endswith(".parquet"):
@@ -619,11 +683,15 @@ class MainFrame(wx.Frame):
                 save_array_npy(path, self.model.annotation)
 
     def on_export_result(self, evt):
-        with wx.FileDialog(self, "Save result", wildcard="CSV (*.csv)|*.csv|Parquet (*.parquet)|*.parquet|NumPy (*.npy)|*.npy",
+        with wx.FileDialog(self, "Save result",
+                           wildcard="CSV (*.csv)|*.csv|Parquet (*.parquet)|*.parquet|NumPy (*.npy)|*.npy",
                            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT) as dlg:
             if dlg.ShowModal() != wx.ID_OK:
                 return
             path = dlg.GetPath()
+            # ensure latest result
+            self.model.set_original(self.original)
+            self.model.set_annotator(self.annotator_seq)
             self.model.recompute()
             if path.endswith(".csv"):
                 save_array_csv(path, self.model.result)
@@ -699,6 +767,17 @@ class MainFrame(wx.Frame):
                     self.result_panel.set_annotation_legend(self.model.annotation_colors)
                 self._refresh_legend()
                 self.SetStatusText(f"Project loaded: {path}")
+
+    # =========================================================
+    # Active Learning controls
+    # =========================================================
+    def on_mode_changed(self, evt):
+        # just store; used when annotator updates
+        pass
+
+    def on_conf_changed(self, evt):
+        # just store; used when annotator updates
+        pass
 
 
 def main():

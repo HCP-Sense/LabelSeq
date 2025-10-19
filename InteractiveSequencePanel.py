@@ -1,4 +1,4 @@
-"""InteractiveSequencePanel.py (Option A: Full UI)
+"""InteractiveSequencePanel.py (Option A with requested changes)
 SequencePanel subclass adding roles (original, annotator, annotation, result),
 draggable annotator points, filled result area, highlights, spans, and pan/zoom.
 """
@@ -21,8 +21,8 @@ class InteractiveSequencePanel(SequencePanel):
     Extended SequencePanel with roles:
       - role="original"   : static original (no edit title/delete)
       - role="annotator"  : draggable points; call on_update(seq) when changed
-      - role="annotation" : shows (original - annotator)
-      - role="result"     : shows original and filled area between original and annotator; highlights
+      - role="annotation" : shows (original - annotator); has Freeze + Edit Formula
+      - role="result"     : shows original and filled area between original and annotator; highlights; Export
     """
 
     # ---------------------------
@@ -48,18 +48,18 @@ class InteractiveSequencePanel(SequencePanel):
         self.on_update = on_update
         self.on_update_callback = on_update
 
-        # allow flags (UI)
+        # UI flags
         self.allow_edit_title = allow_edit_title
         self.allow_delete = allow_delete
 
-        # External references
-        self.annotator_ref = None  # set by main on result/annotation panels when annotator exists
+        # External refs
+        self.annotator_ref = None
         self.original_seq = getattr(self, "original_seq", None)
 
         # Legend mapping: label -> wx.Colour or RGB tuple
         self.annotation_legend: Dict[str, Any] = {}
 
-        # Interaction state (safe defaults for all roles)
+        # Interaction state
         self._undo_stack: List[np.ndarray] = []
         self._redo_stack: List[np.ndarray] = []
         self.play_idx: int = 0
@@ -70,7 +70,10 @@ class InteractiveSequencePanel(SequencePanel):
         self._space_pan_active = False
         self._hit_radius = max(6, int(self.radius * 1.5)) if hasattr(self, "radius") else 8
 
-        # Top UI (buttons) — only in Option A
+        # Y-axis panning offset (affects mapping range)
+        self.y_offset = 0.0
+
+        # Top UI (buttons)
         self._setup_ui()
 
         # Event bindings
@@ -84,7 +87,7 @@ class InteractiveSequencePanel(SequencePanel):
 
         self.Bind(wx.EVT_MIDDLE_DOWN, self.on_middle_down)
         self.Bind(wx.EVT_MIDDLE_UP, self.on_middle_up)
-        self.Bind(wx.EVT_RIGHT_DOWN, self.on_middle_down)   # right as pan start
+        self.Bind(wx.EVT_RIGHT_DOWN, self.on_middle_down)   # right as pan start (x), plus Shift+Right for y-pan
         self.Bind(wx.EVT_RIGHT_UP, self.on_middle_up)
 
         self.Bind(wx.EVT_MOUSEWHEEL, self.on_mouse_wheel)
@@ -113,17 +116,40 @@ class InteractiveSequencePanel(SequencePanel):
         self.title_label.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
         row.Add(self.title_label, 1, wx.ALIGN_CENTER_VERTICAL)
 
+        # Edit Title (except Original)
         if self.allow_edit_title and self.role != "original":
             btn_title = wx.Button(self, label="Edit Title", size=(90, -1))
             btn_title.Bind(wx.EVT_BUTTON, self.edit_title)
             row.Add(btn_title, 0, wx.LEFT, 5)
 
-        if self.formula:
+        # Annotation-specific buttons: Freeze + Edit Formula
+        if self.role == "annotation":
+            # Freeze/Unfreeze button (🔒 / 🔓)
+            self.frozen = False
+            self.btn_freeze = wx.Button(self, label="🔓 Unfrozen", size=(100, -1))
+            self.btn_freeze.Bind(wx.EVT_BUTTON, self.toggle_freeze)
+            row.Add(self.btn_freeze, 0, wx.LEFT, 5)
+
+            # Edit Formula (always visible for annotations)
             btn_formula = wx.Button(self, label="Edit Formula", size=(100, -1))
             btn_formula.Bind(wx.EVT_BUTTON, self.edit_formula)
             row.Add(btn_formula, 0, wx.LEFT, 5)
 
-        if self.allow_delete and self.role not in ("original", "result"):
+        # Result-specific button: Export Result inline
+        if self.role == "result":
+            btn_export = wx.Button(self, label="Export Result", size=(120, -1))
+            def _do_export(evt):
+                top_frame = wx.GetTopLevelParent(self)
+                # prefer a per-panel export if present; otherwise fall back to main handler
+                if hasattr(top_frame, "on_export_result_for_panel"):
+                    top_frame.on_export_result_for_panel(self)
+                elif hasattr(top_frame, "on_export_result"):
+                    top_frame.on_export_result(evt)
+            btn_export.Bind(wx.EVT_BUTTON, _do_export)
+            row.Add(btn_export, 0, wx.LEFT, 5)
+
+        # Delete: disallow for Original, Result, and Annotator (per your request)
+        if self.allow_delete and self.role not in ("original", "result", "annotator"):
             btn_delete = wx.Button(self, label="Delete", size=(70, -1))
             btn_delete.Bind(wx.EVT_BUTTON, self.delete_self)
             row.Add(btn_delete, 0, wx.LEFT, 5)
@@ -132,14 +158,20 @@ class InteractiveSequencePanel(SequencePanel):
         self.Layout()
 
     # ---------------------------
-    # Title / Formula / Delete
+    # Title / Formula / Freeze / Delete
     # ---------------------------
     def edit_title(self, evt):
         dlg = wx.TextEntryDialog(self, "Enter new title:", "Edit Title", self.title)
         if dlg.ShowModal() == wx.ID_OK:
             self.title = dlg.GetValue()
+            # Update label in place; no sizer rebuild to avoid reflow/jump
             self.title_label.SetLabel(self.title)
+            self.Layout()
             self.Refresh()
+            # Let parent know (legend refresh, model rename etc.)
+            top = wx.GetTopLevelParent(self)
+            if hasattr(top, "_refresh_legend"):
+                top._refresh_legend()
         dlg.Destroy()
 
     def edit_formula(self, evt):
@@ -148,6 +180,15 @@ class InteractiveSequencePanel(SequencePanel):
             self.formula = dlg.GetValue()
             self.Refresh()
         dlg.Destroy()
+
+    def toggle_freeze(self, evt=None):
+        # Toggle frozen state for annotation panels
+        self.frozen = not getattr(self, "frozen", False)
+        if self.frozen:
+            self.btn_freeze.SetLabel("🔒 Frozen")
+        else:
+            self.btn_freeze.SetLabel("🔓 Unfrozen")
+        self.Refresh()
 
     def delete_self(self, evt):
         top = wx.GetTopLevelParent(self)
@@ -255,24 +296,32 @@ class InteractiveSequencePanel(SequencePanel):
     # Mouse / interaction handlers
     # ---------------------------
     def on_mouse_motion(self, evt):
-        # Space + left => pan mode
+        # Space + left => pan X
         if wx.GetKeyState(wx.WXK_SPACE) and evt.Dragging() and evt.LeftIsDown():
             if not self._space_pan_active:
                 self._space_pan_active = True
                 self._pan_start = evt.GetX()
                 self._pan_origin = self.pan_offset
             dx = evt.GetX() - self._pan_start
-            self._apply_pan(dx)
+            self._apply_pan_x(dx)
             return
 
-        # Middle/right panning
+        # Middle/right panning (X); Shift+Right panning (Y)
+        if evt.RightIsDown() and evt.ShiftDown() and getattr(self, "_pan_start", None) is not None:
+            dy = evt.GetY() - getattr(self, "_pan_start_y", evt.GetY())
+            self._pan_start_y = evt.GetY()
+            self._apply_pan_y(dy)
+            return
+
         if (evt.MiddleIsDown() or evt.RightIsDown()) and getattr(self, "_pan_start", None) is not None:
             dx = evt.GetX() - self._pan_start
-            self._apply_pan(dx)
+            self._apply_pan_x(dx)
             return
 
         # Span editing
         if getattr(self, "_span_edit", None) and evt.Dragging() and evt.LeftIsDown():
+            if getattr(self, "frozen", False):
+                return
             w, h = self.GetClientSize()
             x = evt.GetX()
             ed = self._span_edit
@@ -297,14 +346,15 @@ class InteractiveSequencePanel(SequencePanel):
             return
 
         # Annotator dragging
-        if (self.role == "annotator" or self.draggable) and getattr(self, "dragging", False) and evt.LeftIsDown():
+        if (self.role == "annotator" or (self.draggable and not getattr(self, "frozen", False))) \
+            and getattr(self, "dragging", False) and evt.LeftIsDown():
             self._handle_drag(evt)
             return
 
         # Hover
         self._handle_hover(evt)
 
-    def _apply_pan(self, dx):
+    def _apply_pan_x(self, dx):
         new_offset = self._pan_origin + dx
         w, _ = self.GetClientSize()
         gw = w - 2 * self.padding
@@ -314,6 +364,20 @@ class InteractiveSequencePanel(SequencePanel):
         for sp in self.sync_panels:
             sp.pan_offset = self.pan_offset
             sp.Refresh()
+        self.Refresh()
+
+    def _apply_pan_y(self, dy):
+        # Adjust y_offset in proportion to drag; scale by range for sensible speed
+        mn, mx = self.get_y_range()
+        rng = max(mx - mn, 1e-9)
+        h = max(1, self.GetClientSize().height - 2 * self.padding)
+        units_per_px = rng / h
+        self.y_offset += dy * units_per_px
+        # sync Y offset to linked panels
+        for sp in self.sync_panels:
+            if hasattr(sp, "y_offset"):
+                sp.y_offset = self.y_offset
+                sp.Refresh()
         self.Refresh()
 
     def on_mouse_leave(self, evt):
@@ -327,20 +391,10 @@ class InteractiveSequencePanel(SequencePanel):
     def on_double_click(self, evt):
         # rename if allowed
         if self.role != "original" and self.allow_edit_title:
-            dlg = wx.TextEntryDialog(self, "Enter new title:", "Rename", self.title)
-            if dlg.ShowModal() == wx.ID_OK:
-                self.title = dlg.GetValue()
-                if hasattr(self, "title_label"):
-                    self.title_label.SetLabel(self.title)
-                self.Refresh()
-            dlg.Destroy()
-        # formula edit if present
-        if self.formula:
-            dlg2 = wx.TextEntryDialog(self, "Enter new formula:", "Edit Formula", self.formula)
-            if dlg2.ShowModal() == wx.ID_OK:
-                self.formula = dlg2.GetValue()
-                self.Refresh()
-            dlg2.Destroy()
+            self.edit_title(evt)
+        # formula edit (for annotation we already show a button; keep double-click as convenience)
+        if self.role == "annotation":
+            self.edit_formula(evt)
 
     def on_left_down(self, evt):
         try:
@@ -350,11 +404,10 @@ class InteractiveSequencePanel(SequencePanel):
 
         w, h = self.GetClientSize()
         x = evt.GetX()
-        y = evt.GetY()
 
         # Span edge/body hit to edit
-        idx, which = self._hit_span_edge(x, y, w, h)
-        if which is not None:
+        idx, which = self._hit_span_edge(x, evt.GetY(), w, h)
+        if which is not None and not getattr(self, "frozen", False):
             self._span_edit = {"index": idx, "which": which, "last_x": x}
             try:
                 self.CaptureMouse()
@@ -362,8 +415,8 @@ class InteractiveSequencePanel(SequencePanel):
                 pass
             return
 
-        # Start creating span with Shift
-        if evt.ShiftDown():
+        # Start creating span with Shift (if not frozen)
+        if evt.ShiftDown() and not getattr(self, "frozen", False):
             self._span_idx0 = self._x_to_index(x, w)
             self._span_edit = None
             return
@@ -373,8 +426,7 @@ class InteractiveSequencePanel(SequencePanel):
         # Annotator: pick nearest point to drag
         if self.role == "annotator":
             x0, y0 = evt.GetPosition()
-            best_dist = float("inf")
-            best_idx = None
+            best_dist = float("inf"); best_idx = None
             for i, v in enumerate(self.seq):
                 try:
                     cx, cy = self.to_px(i, v, w, h)
@@ -394,11 +446,10 @@ class InteractiveSequencePanel(SequencePanel):
                     pass
                 return
 
-        # Generic draggable panels (if any)
-        if self.draggable and self.role != "annotator":
+        # Generic draggable panels (if any) and not frozen
+        if self.draggable and self.role != "annotator" and not getattr(self, "frozen", False):
             x0, y0 = evt.GetPosition()
-            best_dist = float("inf")
-            best_idx = None
+            best_dist = float("inf"); best_idx = None
             for i, v in enumerate(self.seq):
                 cx, cy = self.to_px(i, v, w, h)
                 dist = (cx - x0) ** 2 + (cy - y0) ** 2
@@ -428,14 +479,13 @@ class InteractiveSequencePanel(SequencePanel):
             return
 
         # Finish span creation (Shift drag)
-        if getattr(self, "_span_idx0", None) is not None and evt.ShiftDown():
+        if getattr(self, "_span_idx0", None) is not None and evt.ShiftDown() and not getattr(self, "frozen", False):
             i0 = int(self._span_idx0)
             i1 = self._x_to_index(evt.GetX(), w)
             if i1 != i0:
                 s = {"start": i0, "end": i1, "label": None, "value": None}
                 self._normalize_span(s)
                 self.spans.append(s)
-                # Hook: allow panel to react (annotation panel fills values, etc)
                 cb = getattr(self, "on_span_created", None)
                 if callable(cb):
                     try:
@@ -461,13 +511,29 @@ class InteractiveSequencePanel(SequencePanel):
     def on_middle_down(self, evt):
         self._pan_start = evt.GetX()
         self._pan_origin = self.pan_offset
+        self._pan_start_y = evt.GetY()
 
     def on_middle_up(self, evt):
         self._pan_start = None
         self._space_pan_active = False
+        self._pan_start_y = None
 
     def on_mouse_wheel(self, evt):
         rotation = evt.GetWheelRotation() / max(1, evt.GetWheelDelta())
+
+        if evt.ShiftDown():
+            # Y-pan with wheel (requested)
+            mn, mx = self.get_y_range()
+            rng = max(mx - mn, 1e-9)
+            self.y_offset -= rotation * (0.08 * rng)  # 8% of range per notch
+            for sp in self.sync_panels:
+                if hasattr(sp, "y_offset"):
+                    sp.y_offset = self.y_offset
+                    sp.Refresh()
+            self.Refresh()
+            return
+
+        # X-zoom
         factor = 1 + rotation * 0.1
         old_zoom = self.zoom_factor
         self.zoom_factor = max(1.0, min(old_zoom * factor, 20.0))
@@ -476,17 +542,14 @@ class InteractiveSequencePanel(SequencePanel):
         gw = w - 2 * self.padding
         mouse_x = evt.GetX() - self.padding - self.pan_offset
 
-        # keep zoom centered under mouse
         try:
             self.pan_offset -= mouse_x * (self.zoom_factor / old_zoom - 1)
         except ZeroDivisionError:
             pass
 
-        # clamp
         min_offset = gw * (1 - self.zoom_factor)
         self.pan_offset = min(max(self.pan_offset, min_offset), 0)
 
-        # sync
         for sp in self.sync_panels:
             sp.zoom_factor = self.zoom_factor
             sp.pan_offset = self.pan_offset
@@ -503,7 +566,7 @@ class InteractiveSequencePanel(SequencePanel):
 
         x, y = evt.GetPosition()
         w, h = self.GetClientSize()
-        mn, mx = self.get_y_range()
+        mn, mx = self._get_y_display_range()
         rng = mx - mn or 1.0
         val = ((h - self.padding - y) / (h - 2 * self.padding)) * rng + mn
         val = max(min(val, mx), mn)
@@ -578,8 +641,14 @@ class InteractiveSequencePanel(SequencePanel):
             pass
 
     # ---------------------------
-    # Painting (role visuals)
+    # Painting (role visuals) with Y-pan aware mapping
     # ---------------------------
+    def _get_y_display_range(self):
+        # Base range from data
+        mn, mx = self.get_y_range()
+        # Apply Y offset (pan)
+        return mn + self.y_offset, mx + self.y_offset
+
     def on_paint(self, evt):
         w, h = self.GetClientSize()
         if w < 2 or h < 2 or self.n < 2:
@@ -589,6 +658,13 @@ class InteractiveSequencePanel(SequencePanel):
         gc = wx.GraphicsContext.Create(dc)
         if not gc:
             return
+        # --- SAFETY: always set a valid font before any text extent/draw ---
+        try:
+            default_font = wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
+            gc.SetFont(gc.CreateFont(default_font, wx.BLACK))
+        except Exception:
+            pass
+        # -------------------------------------------------------------------
 
         # Background
         gc.SetBrush(wx.Brush(wx.WHITE))
@@ -596,12 +672,32 @@ class InteractiveSequencePanel(SequencePanel):
 
         # Axes
         gc.SetPen(wx.Pen(wx.LIGHT_GREY))
-        gc.StrokeLine(self.padding, self.padding, self.padding, h - self.padding)
-        gc.StrokeLine(self.padding, h - self.padding, w - self.padding, h - self.padding)
+        gc.StrokeLine(self.padding, self.padding, self.padding, h - self.padding)  # Y-axis
+        gc.StrokeLine(self.padding, h - self.padding, w - self.padding, h - self.padding)  # X-axis
 
-        # Ranges
-        mn, mx = self.get_y_range()
+        # Ranges with Y-pan applied
+        mn, mx = self._get_y_display_range()
         rng = (mx - mn) or 1.0
+
+        # Y ticks & labels (always visible)
+        step_val = rng / 5.0
+        for k in range(6):
+            val = mn + k * step_val
+            y = h - self.padding - (val - mn) * ((h - 2 * self.padding) / max(rng, 1e-9))
+            gc.StrokeLine(self.padding - 5, y, self.padding, y)
+            txt = f"{val:.1f}"
+            tw, th = gc.GetTextExtent(txt)
+            gc.DrawText(txt, self.padding - 10 - tw, y - th / 2)
+
+        # X ticks & labels (always visible)
+        step_idx = max(1, self.n // 10)
+        for i in range(0, self.n, step_idx):
+            x, _ = self.to_px(i, mn, w, h, mn, mx)
+            if self.padding <= x <= w - self.padding:
+                gc.StrokeLine(x, h - self.padding, x, h - self.padding + 5)
+                lbl = str(i)
+                tw, th = gc.GetTextExtent(lbl)
+                gc.DrawText(lbl, x - tw / 2, h - self.padding + 8)
 
         # Title
         try:
@@ -616,11 +712,11 @@ class InteractiveSequencePanel(SequencePanel):
         # Clip to plot
         gc.Clip(self.padding, self.padding, w - 2 * self.padding, h - 2 * self.padding)
 
-        # Convert to pts
+        # Convert to pts with Y-pan aware range
         seq_arr = np.asarray(self.seq, dtype=float)
         pts = [self.to_px(i, v, w, h, mn, mx) for i, v in enumerate(seq_arr)]
 
-        # Original overlay
+        # Original overlay (if present)
         if getattr(self, "original_seq", None) is not None and len(self.original_seq) == self.n:
             orig_arr = np.asarray(self.original_seq, dtype=float)
             orig_pts = [self.to_px(i, v, w, h, mn, mx) for i, v in enumerate(orig_arr)]
@@ -635,18 +731,14 @@ class InteractiveSequencePanel(SequencePanel):
         if self.role == "annotation":
             if len(pts) >= 2:
                 p = gc.CreatePath()
-                p.MoveToPoint(*pts[0])
-                for pt in pts[1:]:
-                    p.AddLineToPoint(*pt)
+                p.MoveToPoint(*pts[0]); [p.AddLineToPoint(*pt) for pt in pts[1:]]
                 gc.SetPen(wx.Pen(self.color, 1))
                 gc.StrokePath(p)
 
         elif self.role == "annotator":
             if len(pts) >= 2:
                 p = gc.CreatePath()
-                p.MoveToPoint(*pts[0])
-                for pt in pts[1:]:
-                    p.AddLineToPoint(*pt)
+                p.MoveToPoint(*pts[0]); [p.AddLineToPoint(*pt) for pt in pts[1:]]
                 gc.SetPen(wx.Pen(self.color, 1))
                 gc.StrokePath(p)
             for (x, y) in pts:
@@ -660,8 +752,7 @@ class InteractiveSequencePanel(SequencePanel):
                     ann_arr = np.asarray(self.annotator_ref.seq, dtype=float)
                     minlen = min(len(seq_arr), len(ann_arr))
                     orig = np.asarray(self.original_seq, dtype=float) if getattr(self, "original_seq", None) is not None else seq_arr
-                    orig = orig[:minlen]
-                    ann = ann_arr[:minlen]
+                    orig = orig[:minlen]; ann = ann_arr[:minlen]
                     orig_pts2 = [self.to_px(i, v, w, h, mn, mx) for i, v in enumerate(orig)]
                     ann_pts2 = [self.to_px(i, v, w, h, mn, mx) for i, v in enumerate(ann)]
                     if len(orig_pts2) >= 2 and len(ann_pts2) >= 2:
@@ -687,31 +778,26 @@ class InteractiveSequencePanel(SequencePanel):
                         annot_pts = ann_pts2
                 except Exception:
                     annot_pts = None
-            if annot_pts is None:
-                if len(pts) >= 2:
-                    p = gc.CreatePath()
-                    p.MoveToPoint(*pts[0])
-                    for pt in pts[1:]:
-                        p.AddLineToPoint(*pt)
-                    gc.SetPen(wx.Pen(self.color, 1))
-                    gc.StrokePath(p)
+            if annot_pts is None and len(pts) >= 2:
+                p = gc.CreatePath()
+                p.MoveToPoint(*pts[0]); [p.AddLineToPoint(*pt) for pt in pts[1:]]
+                gc.SetPen(wx.Pen(self.color, 1))
+                gc.StrokePath(p)
 
         else:
             if len(pts) >= 2:
                 p = gc.CreatePath()
-                p.MoveToPoint(*pts[0])
-                for pt in pts[1:]:
-                    p.AddLineToPoint(*pt)
+                p.MoveToPoint(*pts[0]); [p.AddLineToPoint(*pt) for pt in pts[1:]]
                 gc.SetPen(wx.Pen(self.color, 1))
                 gc.StrokePath(p)
 
-        # Draw playhead
+        # Playhead
         if getattr(self, "play_idx", None) is not None and 0 <= self.play_idx < self.n:
             x_px, _ = self.to_px(self.play_idx, seq_arr[self.play_idx], w, h, mn, mx)
             gc.SetPen(wx.Pen(wx.Colour(0, 0, 0), 1, wx.PENSTYLE_DOT))
             gc.StrokeLine(x_px, self.padding, x_px, h - self.padding)
 
-        # Draw spans (yellow translucent)
+        # Spans
         if getattr(self, 'spans', None):
             gc.SetBrush(wx.Brush(wx.Colour(200, 200, 0, 64)))
             gc.SetPen(wx.Pen(wx.Colour(200, 200, 0, 64)))
@@ -727,13 +813,13 @@ class InteractiveSequencePanel(SequencePanel):
                 x1, _ = self.to_px(B, mn, w, h, mn, mx)
                 gc.DrawRectangle(x0, self.padding, x1 - x0, h - 2 * self.padding)
 
-        # Selected & hover handles
+        # Selected & hover
         if getattr(self, "selected_idx", None) is not None and 0 <= self.selected_idx < len(pts):
             x, y = pts[self.selected_idx]
             gc.SetBrush(wx.Brush(self.color))
             gc.DrawEllipse(x - self.radius, y - self.radius, 2 * self.radius, 2 * self.radius)
 
-        if getattr(self, "hover_idx", None) is not None and 0 <= self.hover_idx < len(pts):
+        if getattr(self, "hover_idx", None) is not None and 0 <= self.hover_idx < self.n:
             x, y = pts[self.hover_idx]
             gc.SetBrush(wx.Brush(self.color))
             gc.DrawEllipse(x - self.radius, y - self.radius, 2 * self.radius, 2 * self.radius)
@@ -765,12 +851,10 @@ class InteractiveSequencePanel(SequencePanel):
 
         # Delete a span containing the playhead
         if key in (wx.WXK_DELETE, wx.WXK_NUMPAD_DELETE):
-            if getattr(self, "spans", None) and getattr(self, "play_idx", None) is not None:
+            if getattr(self, "spans", None) and getattr(self, "play_idx", None) is not None and not getattr(self, "frozen", False):
                 for i, s in enumerate(list(self.spans)):
-                    a = int(s.get("start", 0))
-                    b = int(s.get("end", a))
-                    if a > b:
-                        a, b = b, a
+                    a = int(s.get("start", 0)); b = int(s.get("end", a))
+                    if a > b: a, b = b, a
                     if a <= self.play_idx <= b:
                         try:
                             self.spans.pop(i)
@@ -793,7 +877,7 @@ class InteractiveSequencePanel(SequencePanel):
                 self.play_idx -= 1
             elif key == wx.WXK_RIGHT and self.play_idx < (self.n - 1):
                 self.play_idx += 1
-            elif key in (wx.WXK_UP, wx.WXK_DOWN) and getattr(self, "draggable", False):
+            elif key in (wx.WXK_UP, wx.WXK_DOWN) and getattr(self, "draggable", False) and not getattr(self, "frozen", False):
                 delta = 1.0 if not (mods & wx.MOD_SHIFT) else 0.1
                 if key == wx.WXK_DOWN:
                     delta = -delta
@@ -811,3 +895,22 @@ class InteractiveSequencePanel(SequencePanel):
             evt.Skip()
         except Exception:
             pass
+    def get_visible_index_range(self):
+        """
+        Estimate the visible data index range based on zoom_factor and pan_offset.
+        Returns (left_idx, right_idx_exclusive).
+        """
+        w, _ = self.GetClientSize()
+        gw = max(1, w - 2 * self.padding)
+        if self.n <= 1:
+            return 0, self.n
+        # estimated pixels per index at current zoom
+        px_per_idx = gw / (self.n - 1) * self.zoom_factor
+        if px_per_idx <= 0:
+            return 0, self.n
+        # leftmost index whose x is at padding
+        left_float = -self.pan_offset / px_per_idx
+        right_float = left_float + gw / px_per_idx
+        left = int(max(0, min(self.n - 1, left_float)))
+        right = int(max(left + 1, min(self.n, right_float + 1)))
+        return left, right
